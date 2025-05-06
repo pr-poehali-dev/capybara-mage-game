@@ -9,6 +9,8 @@ import Icon from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AnatomyMarker from "@/components/AnatomyMarker";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "@/hooks/use-toast";
 
 // Фразы Капибары-мага
 const capybaraQuotes = [
@@ -24,6 +26,25 @@ const capybaraQuotes = [
   "Позвольте моей магии раскрыть тайны этого тела!"
 ];
 
+// Фразы Капибары при коррекции точек
+const correctionQuotes = [
+  "Ох! Благодарю за поправку, у меня лапки иногда дрожат от магического напряжения!",
+  "А вы хорошо разбираетесь в анатомии! Моя магия только улучшается благодаря вам!",
+  "Хм, интересное наблюдение! Корректировка принята, спасибо за помощь!",
+  "Ах, да! Точно! Теперь вижу намного яснее. Мои магические очки запотели...",
+  "Ценное уточнение! Добавлю в свой анатомический гримуар!",
+  "Какой глазастый помощник! Из вас получился бы отличный анатомический маг!"
+];
+
+// Фразы Капибары о массаже
+const massageQuotes = [
+  "Массаж - это тоже своего рода магия! Ищите точки напряжения!",
+  "Ах! Эта точка связана с потоком жизненной энергии персонажа!",
+  "Превосходно! Вы нашли тайную точку релаксации!",
+  "Ммм, эта зона особенно нуждается в магическом массаже!",
+  "Почувствуйте поток энергии под вашими пальцами! Она пульсирует!"
+];
+
 // Медицинские инструменты Капибары-мага
 const medicalTools = [
   { name: "Магический стетоскоп", icon: "Stethoscope", description: "Слышит биение сердца на расстоянии!" },
@@ -36,19 +57,26 @@ const medicalTools = [
 const Index = () => {
   const [image, setImage] = useState<string | null>(null);
   const [features, setFeatures] = useState<string>("");
-  const [anatomyLayer, setAnatomyLayer] = useState<"surface" | "internal" | "skeletal">("surface");
-  const [surfacePoints, setSurfacePoints] = useState<Array<{x: number, y: number, label: string}>>([]);
-  const [internalPoints, setInternalPoints] = useState<Array<{x: number, y: number, label: string}>>([]);
-  const [skeletalPoints, setSkeletalPoints] = useState<Array<{x: number, y: number, label: string}>>([]);
+  const [anatomyLayer, setAnatomyLayer] = useState<"surface" | "internal" | "skeletal" | "massage">("surface");
+  const [surfacePoints, setSurfacePoints] = useState<Array<{x: number, y: number, label: string, isEditing?: boolean}>>([]);
+  const [internalPoints, setInternalPoints] = useState<Array<{x: number, y: number, label: string, isEditing?: boolean}>>([]);
+  const [skeletalPoints, setSkeletalPoints] = useState<Array<{x: number, y: number, label: string, isEditing?: boolean}>>([]);
+  const [massagePoints, setMassagePoints] = useState<Array<{x: number, y: number, label: string, isFound?: boolean}>>([]);
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [currentQuote, setCurrentQuote] = useState<string>("");
   const [currentTool, setCurrentTool] = useState<typeof medicalTools[0] | null>(null);
   const [analysisComplete, setAnalysisComplete] = useState<boolean>(false);
+  const [editingMode, setEditingMode] = useState<boolean>(false);
+  const [massageMode, setMassageMode] = useState<boolean>(false);
+  const [massageScore, setMassageScore] = useState<number>(0);
+  const [massageStarted, setMassageStarted] = useState<boolean>(false);
+  
   const imageRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Обновление цитаты каждые 5 секунд
   useEffect(() => {
-    if (analyzing || analysisComplete) {
+    if (analyzing || (analysisComplete && !editingMode && !massageMode)) {
       const interval = setInterval(() => {
         const randomQuote = capybaraQuotes[Math.floor(Math.random() * capybaraQuotes.length)];
         setCurrentQuote(randomQuote);
@@ -56,7 +84,19 @@ const Index = () => {
       
       return () => clearInterval(interval);
     }
-  }, [analyzing, analysisComplete]);
+  }, [analyzing, analysisComplete, editingMode, massageMode]);
+
+  // Обновление цитат массажа
+  useEffect(() => {
+    if (massageMode && massageStarted) {
+      const interval = setInterval(() => {
+        const randomQuote = massageQuotes[Math.floor(Math.random() * massageQuotes.length)];
+        setCurrentQuote(randomQuote);
+      }, 4000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [massageMode, massageStarted]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -67,7 +107,12 @@ const Index = () => {
           setSurfacePoints([]);
           setInternalPoints([]);
           setSkeletalPoints([]);
+          setMassagePoints([]);
           setAnalysisComplete(false);
+          setEditingMode(false);
+          setMassageMode(false);
+          setMassageStarted(false);
+          setMassageScore(0);
         }
       };
       reader.readAsDataURL(e.target.files[0]);
@@ -118,9 +163,14 @@ const Index = () => {
         const skeletalLabels = ["Череп", "Позвоночник", "Ребра", "Таз", "Бедренные кости"];
         const newSkeletalPoints = generatePointsForLayer(width, height, skeletalLabels);
         
+        // Массажные точки
+        const massageLabels = ["Точка расслабления", "Узел напряжения", "Энергетический центр", "Точка силы", "Зона гармонии"];
+        const newMassagePoints = generatePointsForLayer(width, height, massageLabels, true);
+        
         setSurfacePoints(newSurfacePoints);
         setInternalPoints(newInternalPoints);
         setSkeletalPoints(newSkeletalPoints);
+        setMassagePoints(newMassagePoints);
       }
       
       setAnalyzing(false);
@@ -130,7 +180,7 @@ const Index = () => {
   };
 
   // Вспомогательная функция для генерации точек по слоям
-  const generatePointsForLayer = (width: number, height: number, labels: string[]) => {
+  const generatePointsForLayer = (width: number, height: number, labels: string[], isMassage = false) => {
     const points = [];
     
     for (let i = 0; i < labels.length; i++) {
@@ -138,16 +188,26 @@ const Index = () => {
       const x = Math.floor(Math.random() * (width - 80) + 40);
       const y = Math.floor((i * (height / labels.length)) + (height / (labels.length * 2)));
       
-      points.push({
-        x,
-        y,
-        label: labels[i]
-      });
+      if (isMassage) {
+        points.push({
+          x,
+          y,
+          label: labels[i],
+          isFound: false
+        });
+      } else {
+        points.push({
+          x,
+          y,
+          label: labels[i],
+          isEditing: false
+        });
+      }
     }
     
     return points;
   };
-
+  
   const getActivePoints = () => {
     switch (anatomyLayer) {
       case "surface":
@@ -156,9 +216,123 @@ const Index = () => {
         return internalPoints;
       case "skeletal":
         return skeletalPoints;
+      case "massage":
+        return massagePoints;
       default:
         return [];
     }
+  };
+  
+  const setActivePoints = (points: any[]) => {
+    switch (anatomyLayer) {
+      case "surface":
+        setSurfacePoints(points);
+        break;
+      case "internal":
+        setInternalPoints(points);
+        break;
+      case "skeletal":
+        setSkeletalPoints(points);
+        break;
+      case "massage":
+        setMassagePoints(points);
+        break;
+    }
+  };
+  
+  const handleMarkerDrag = (index: number, newX: number, newY: number) => {
+    if (!editingMode) return;
+    
+    const points = [...getActivePoints()];
+    points[index] = { ...points[index], x: newX, y: newY };
+    setActivePoints(points);
+    
+    // Показать цитату капибары о коррекции
+    const randomQuote = correctionQuotes[Math.floor(Math.random() * correctionQuotes.length)];
+    setCurrentQuote(randomQuote);
+    
+    toast({
+      title: "Точка изменена!",
+      description: "Капибара-маг учтёт ваши корректировки",
+    });
+  };
+  
+  const handleMassagePointClick = (index: number) => {
+    if (!massageMode || !massageStarted) return;
+    
+    const points = [...massagePoints];
+    
+    // Если точка уже найдена, ничего не делаем
+    if (points[index].isFound) return;
+    
+    // Отмечаем точку как найденную
+    points[index] = { ...points[index], isFound: true };
+    setMassagePoints(points);
+    
+    // Увеличиваем счет
+    setMassageScore(massageScore + 1);
+    
+    // Показать цитату капибары о массаже
+    const randomQuote = massageQuotes[Math.floor(Math.random() * massageQuotes.length)];
+    setCurrentQuote(randomQuote);
+    
+    toast({
+      title: "Массажная точка активирована!",
+      description: `Вы нашли ${points[index].label}. Продолжайте поиск!`,
+    });
+    
+    // Проверяем, все ли точки найдены
+    if (points.filter(p => p.isFound).length === points.length) {
+      setMassageStarted(false);
+      toast({
+        title: "Массаж завершен!",
+        description: "Вы нашли все точки! Персонаж полностью расслаблен.",
+      });
+      setCurrentQuote("Великолепно! Вы нашли все массажные точки. Ваш персонаж теперь полностью расслаблен и полон энергии!");
+    }
+  };
+  
+  const toggleEditingMode = () => {
+    setEditingMode(!editingMode);
+    setMassageMode(false);
+    setMassageStarted(false);
+    
+    if (!editingMode) {
+      setCurrentQuote("Теперь вы можете перемещать точки! Корректируйте их положение, а я запомню ваши изменения.");
+    } else {
+      setCurrentQuote("Отлично! Я запомнила все ваши корректировки.");
+    }
+  };
+  
+  const toggleMassageMode = () => {
+    setMassageMode(!massageMode);
+    setEditingMode(false);
+    
+    if (!massageMode) {
+      setAnatomyLayer("massage");
+      setCurrentQuote("Режим массажа активирован! Нажмите на точки, чтобы активировать их.");
+    } else {
+      setAnatomyLayer("surface");
+      setMassageStarted(false);
+      setMassageScore(0);
+      setCurrentQuote("Режим массажа отключен. Вернемся к анатомии!");
+    }
+  };
+  
+  const startMassage = () => {
+    setMassageStarted(true);
+    
+    // Сбрасываем все найденные точки
+    const resetPoints = massagePoints.map(point => ({...point, isFound: false}));
+    setMassagePoints(resetPoints);
+    setMassageScore(0);
+    
+    setCurrentQuote("Начинайте массаж! Найдите все точки и активируйте их нажатием.");
+    
+    toast({
+      title: "Массаж начат!",
+      description: "Найдите и активируйте все массажные точки на теле персонажа.",
+    });
   };
 
   return (
@@ -223,6 +397,29 @@ const Index = () => {
                 )}
               </Button>
               
+              {/* Режимы корректировки и массажа */}
+              {analysisComplete && (
+                <div className="flex gap-2 mt-2">
+                  <Button 
+                    onClick={toggleEditingMode}
+                    variant={editingMode ? "default" : "outline"}
+                    className={`flex-1 ${editingMode ? "bg-amber-500 hover:bg-amber-600" : ""}`}
+                  >
+                    <Icon name="Edit2" className="mr-2 h-4 w-4" />
+                    {editingMode ? "Завершить правку" : "Исправить точки"}
+                  </Button>
+                  
+                  <Button 
+                    onClick={toggleMassageMode}
+                    variant={massageMode ? "default" : "outline"}
+                    className={`flex-1 ${massageMode ? "bg-emerald-500 hover:bg-emerald-600" : ""}`}
+                  >
+                    <Icon name="Fingerprint" className="mr-2 h-4 w-4" />
+                    {massageMode ? "Выйти из режима" : "Режим массажа"}
+                  </Button>
+                </div>
+              )}
+              
               {/* Секция с инструментами и фразами Капибары */}
               <div className="mt-4 rounded-lg border bg-cyan-50 p-4 relative">
                 {currentTool ? (
@@ -245,6 +442,34 @@ const Index = () => {
                 )}
               </div>
               
+              {/* Панель массажа */}
+              {massageMode && (
+                <div className="mt-4 bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-semibold text-emerald-800">
+                      Режим массажа {massageStarted ? "(активен)" : ""}
+                    </h3>
+                    <Badge variant="outline" className="bg-emerald-100 text-emerald-800">
+                      Найдено: {massageScore}/{massagePoints.length}
+                    </Badge>
+                  </div>
+                  
+                  {!massageStarted ? (
+                    <Button 
+                      onClick={startMassage}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600"
+                    >
+                      <Icon name="Play" className="mr-2 h-4 w-4" />
+                      Начать массаж
+                    </Button>
+                  ) : (
+                    <div className="text-sm text-emerald-700">
+                      Нажимайте на точки на изображении чтобы активировать их!
+                    </div>
+                  )}
+                </div>
+              )}
+              
               {/* Отображение медицинских инструментов */}
               {analysisComplete && (
                 <div className="grid grid-cols-3 gap-2 mt-4">
@@ -264,16 +489,21 @@ const Index = () => {
             
             <div className="space-y-4">
               {analysisComplete && (
-                <Tabs defaultValue="surface" onValueChange={(v) => setAnatomyLayer(v as any)}>
-                  <TabsList className="grid grid-cols-3 mb-2">
+                <Tabs 
+                  defaultValue="surface" 
+                  value={anatomyLayer}
+                  onValueChange={(v) => setAnatomyLayer(v as any)}
+                >
+                  <TabsList className="grid grid-cols-4 mb-2">
                     <TabsTrigger value="surface">Внешний слой</TabsTrigger>
-                    <TabsTrigger value="internal">Внутренние органы</TabsTrigger>
+                    <TabsTrigger value="internal">Внутренние</TabsTrigger>
                     <TabsTrigger value="skeletal">Скелет</TabsTrigger>
+                    <TabsTrigger value="massage" disabled={!massageMode}>Массаж</TabsTrigger>
                   </TabsList>
                 </Tabs>
               )}
               
-              <div className="relative bg-gray-100 rounded-lg overflow-hidden min-h-[400px] flex items-center justify-center">
+              <div ref={containerRef} className="relative bg-gray-100 rounded-lg overflow-hidden min-h-[400px] flex items-center justify-center">
                 {image ? (
                   <div className="relative w-full h-full">
                     <img 
@@ -290,8 +520,19 @@ const Index = () => {
                         x={point.x}
                         y={point.y}
                         label={point.label}
-                        className={anatomyLayer === "surface" ? "text-cyan-600" : 
-                                 anatomyLayer === "internal" ? "text-rose-600" : "text-amber-600"}
+                        draggable={editingMode}
+                        onDrag={(newX, newY) => handleMarkerDrag(index, newX, newY)}
+                        onClick={() => anatomyLayer === "massage" && handleMassagePointClick(index)}
+                        className={
+                          anatomyLayer === "surface" ? "text-cyan-600" : 
+                          anatomyLayer === "internal" ? "text-rose-600" : 
+                          anatomyLayer === "skeletal" ? "text-amber-600" : 
+                          (anatomyLayer === "massage" && point.isFound) ? "text-emerald-600 font-bold" : "text-emerald-600"
+                        }
+                        containerRef={containerRef}
+                        isActive={
+                          anatomyLayer === "massage" ? point.isFound : undefined
+                        }
                       />
                     ))}
                     
@@ -302,6 +543,20 @@ const Index = () => {
                         <div className="z-10 p-4 bg-cyan-100 rounded-full animate-bounce">
                           <Icon name={currentTool.icon} className="h-12 w-12 text-cyan-700" />
                         </div>
+                      </div>
+                    )}
+                    
+                    {/* Индикатор режима редактирования */}
+                    {editingMode && (
+                      <div className="absolute top-2 right-2 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-1 rounded-md border border-amber-300">
+                        Режим редактирования: перетащите точки для коррекции
+                      </div>
+                    )}
+                    
+                    {/* Индикатор режима массажа */}
+                    {massageMode && massageStarted && (
+                      <div className="absolute top-2 right-2 bg-emerald-100 text-emerald-800 text-xs font-medium px-2 py-1 rounded-md border border-emerald-300">
+                        Нажимайте на точки для массажа
                       </div>
                     )}
                   </div>
@@ -318,6 +573,7 @@ const Index = () => {
                   <div className={`h-3 w-3 rounded-full ${anatomyLayer === "surface" ? "bg-cyan-500" : "bg-cyan-200"}`}></div>
                   <div className={`h-3 w-3 rounded-full ${anatomyLayer === "internal" ? "bg-rose-500" : "bg-rose-200"}`}></div>
                   <div className={`h-3 w-3 rounded-full ${anatomyLayer === "skeletal" ? "bg-amber-500" : "bg-amber-200"}`}></div>
+                  <div className={`h-3 w-3 rounded-full ${anatomyLayer === "massage" ? "bg-emerald-500" : "bg-emerald-200"}`}></div>
                 </div>
               )}
             </div>
@@ -325,7 +581,7 @@ const Index = () => {
           
           <CardFooter className="bg-indigo-50 p-4 border-t text-center text-indigo-700 text-sm">
             <p className="w-full">
-              Капибара-маг изучит анатомию вашего персонажа на трех уровнях: внешний вид, внутренние органы и скелет! ✨
+              Капибара-маг изучит анатомию вашего персонажа на трех уровнях: внешний вид, внутренние органы и скелет! Вы также можете исправить точки или перейти в режим массажа! ✨
             </p>
           </CardFooter>
         </Card>
