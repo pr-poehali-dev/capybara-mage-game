@@ -18,8 +18,11 @@ const AnatomyMarker = ({ x, y, label, className }: AnatomyMarkerProps) => {
         top: `${y}px`
       }}
     >
-      <div className="w-4 h-4 bg-cyan-500 rounded-full">
-        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 bg-white px-2 py-1 rounded text-xs font-bold shadow-md whitespace-nowrap">
+      <div className="w-4 h-4 bg-cyan-500 rounded-full animate-pulse relative">
+        <div className={cn(
+          "absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 bg-white px-2 py-1 rounded text-xs font-bold shadow-md whitespace-nowrap", 
+          className
+        )}>
           {label}
         </div>
         <div className="absolute w-0.5 h-10 bg-cyan-500 left-1/2 transform -translate-x-1/2 -bottom-10"></div>
